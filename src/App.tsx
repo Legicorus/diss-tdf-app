@@ -1,20 +1,12 @@
 import React, { useState } from "react";
 
 /**
- * Diss-TDF Entscheidungsunterstützung (Prototyp)
- *
- * Zielgruppe: Ärzt:innen / Therapeut:innen
- * Funktion:
- *  - 4 Dimensionen des Dissociation – Therapeutic Decision Framework (Diss-TDF)
- *  - Jede Dimension wird per Likert-Skala (1–5) eingeschätzt
- *  - Am Ende werden für jede Dimension:
- *      - fein abgestufte Einordnung (klar/eher/gemischt)
- *      - empfohlene therapeutische Schwerpunkte (auf Basis des Pols)
- *      - nicht empfohlene Vorgehensweisen
- *    angezeigt sowie eine aggregierte Übersicht der empfohlenen Methoden.
- *
- * Hinweis: Prototyp, ersetzt keine klinische Entscheidung.
+ * Diss-TDF Entscheidungsunterstützung (mit einfachem Passwortschutz)
  */
+
+/* ---------- Passwort-Konfiguration ---------- */
+
+const ACCESS_PASSWORD = "DissTDF2025!"; // <<-- hier dein Passwort eintragen
 
 /* ---------- Typen ---------- */
 
@@ -37,8 +29,8 @@ type Dimension = {
 type PoleId = "left" | "middle" | "right";
 
 type PoleInfo = {
-  name: string; // z. B. "somatoform" oder "nach Akuttrauma"
-  headline: string; // z. B. "Überwiegend somatoforme Symptomatik"
+  name: string;
+  headline: string;
   recommended: string[];
   avoid: string[];
 };
@@ -52,12 +44,12 @@ type DimensionRecommendationConfig = {
 type DimensionResult = {
   dimension: Dimension;
   pole: PoleInfo;
-  rawValue: number; // 1–5 aus der Skala
+  rawValue: number;
 };
 
 type AggregatedMethod = {
   label: string;
-  sources: string[]; // aus welchen Dimensionen kommt diese Empfehlung?
+  sources: string[];
 };
 
 /* ---------- Dimensionen ---------- */
@@ -117,7 +109,7 @@ const DIMENSIONS: Dimension[] = [
   }
 ];
 
-/* ---------- Entscheidungstabellen je Dimension (Pol-basiert) ---------- */
+/* ---------- Entscheidungstabellen pro Dimension ---------- */
 
 const CONFIG: Record<Dimension["id"], DimensionRecommendationConfig> = {
   beginn: {
@@ -284,12 +276,11 @@ const CONFIG: Record<Dimension["id"], DimensionRecommendationConfig> = {
 /* ---------- Auswertung ---------- */
 
 function classifyPole(value: number): PoleId {
-  if (value <= 2) return "left";   // 1 & 2 = linker Pol (unterscheiden wir im Text)
-  if (value >= 4) return "right";  // 4 & 5 = rechter Pol
-  return "middle";                 // 3 = Mitte
+  if (value <= 2) return "left";
+  if (value >= 4) return "right";
+  return "middle";
 }
 
-// Feinere verbale Einordnung je Dimension und Wert (Option A)
 function getFineGrainedLabel(dimId: Dimension["id"], value: number, fallback: string): string {
   if (!value || value < 1 || value > 5) return fallback;
 
@@ -298,7 +289,7 @@ function getFineGrainedLabel(dimId: Dimension["id"], value: number, fallback: st
     if (value === 2) return "Eher somatoforme Symptomatik";
     if (value === 3) return "Gemischt somato- und psychoform";
     if (value === 4) return "Eher psychoforme Symptomatik";
-    return "Klar psychoforme Symptomatik"; // 5
+    return "Klar psychoforme Symptomatik";
   }
 
   if (dimId === "beginn") {
@@ -345,7 +336,6 @@ function evaluate(values: Record<string, number>): {
     perDimension.push({ dimension: dim, pole: poleInfo, rawValue: raw });
   }
 
-  // Aggregation der empfohlenen Methoden (Pol-basiert)
   const map: Record<string, AggregatedMethod> = {};
 
   for (const res of perDimension) {
@@ -365,31 +355,49 @@ function evaluate(values: Record<string, number>): {
   return { perDimension, aggregated };
 }
 
-/* ---------- UI ---------- */
+/* ---------- UI Styles ---------- */
 
-const containerStyle: React.CSSProperties = {
-  maxWidth: 960,
-  margin: "24px auto",
+const appWrapperStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "linear-gradient(135deg, #e3f0ff, #f6f3ff)",
   padding: 16,
-  fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  color: "#123"
+  fontFamily:
+    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 };
 
-const cardStyle: React.CSSProperties = {
+const innerCardStyle: React.CSSProperties = {
   background: "#ffffff",
+  borderRadius: 16,
+  padding: 20,
+  boxShadow: "0 12px 30px rgba(15, 35, 80, 0.12)",
+  maxWidth: 960,
+  width: "100%",
+  maxHeight: "90vh",
+  overflowY: "auto"
+};
+
+const sectionCardStyle: React.CSSProperties = {
+  background: "#f9fbff",
   borderRadius: 12,
   padding: 16,
-  boxShadow: "0 1px 8px rgba(15, 35, 80, 0.08)",
-  marginBottom: 16
+  marginBottom: 16,
+  border: "1px solid #e1e7f5"
 };
 
+/* ---------- Komponente ---------- */
+
 export default function App() {
+  const [authorized, setAuthorized] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+
   const [values, setValues] = useState<Record<string, number>>({});
   const [step, setStep] = useState(0);
   const [showResult, setShowResult] = useState(false);
 
   const currentDim = DIMENSIONS[step];
-
   const totalSteps = DIMENSIONS.length;
 
   const handleSelect = (itemId: string, value: number) => {
@@ -418,109 +426,180 @@ export default function App() {
     ? evaluate(values)
     : { perDimension: [], aggregated: [] };
 
-  return (
-    <div style={containerStyle}>
-      <header style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, color: "#0b5394", margin: 0 }}>
-          Diss-TDF – Entscheidungsunterstützung (Prototyp)
-        </h1>
-        <p style={{ marginTop: 6, color: "#456" }}>
-          Behandelnde Person schätzt die vier Dimensionen auf einer Skala ein.
-          Anschließend werden passende therapeutische Schwerpunkte vorgeschlagen.
-        </p>
-      </header>
+  /* ---------- Login-Screen ---------- */
 
-      {!showResult && (
-        <>
-          <div style={{ marginBottom: 12 }}>
-            <div
-              style={{
-                height: 8,
-                borderRadius: 999,
-                background: "#e4edf9",
-                overflow: "hidden"
-              }}
-            >
+  if (!authorized) {
+    return (
+      <div style={appWrapperStyle}>
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: 16,
+            padding: 24,
+            boxShadow: "0 12px 30px rgba(15, 35, 80, 0.15)",
+            maxWidth: 360,
+            width: "100%",
+            textAlign: "center"
+          }}
+        >
+          <h2 style={{ margin: 0, color: "#123" }}>Diss-TDF – Zugang</h2>
+          <p style={{ margin: "8px 0 16px", fontSize: 14, color: "#456" }}>
+            Diese Anwendung ist passwortgeschützt.
+          </p>
+          <input
+            type="password"
+            placeholder="Passwort eingeben"
+            value={passwordInput}
+            onChange={(e) => setPasswordInput(e.target.value)}
+            style={{
+              padding: 10,
+              fontSize: 15,
+              borderRadius: 8,
+              border: "1px solid #ccd4ea",
+              outline: "none",
+              width: "100%",
+              boxSizing: "border-box",
+              marginBottom: 12
+            }}
+          />
+          <button
+            onClick={() => {
+              if (passwordInput === ACCESS_PASSWORD) {
+                setAuthorized(true);
+              } else {
+                alert("Falsches Passwort");
+              }
+            }}
+            style={{
+              padding: "10px 18px",
+              background: "#4a7bd1",
+              color: "white",
+              border: "none",
+              borderRadius: 999,
+              cursor: "pointer",
+              width: "100%",
+              fontSize: 15,
+              fontWeight: 500
+            }}
+          >
+            Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- Haupt-App ---------- */
+
+  return (
+    <div style={appWrapperStyle}>
+      <div style={innerCardStyle}>
+        <header style={{ marginBottom: 16 }}>
+          <h1 style={{ fontSize: 22, color: "#0b5394", margin: 0 }}>
+            Diss-TDF – Entscheidungsunterstützung
+          </h1>
+          <p style={{ marginTop: 6, color: "#456", fontSize: 14 }}>
+            Behandelnde Person schätzt die vier Dimensionen ein. Im Anschluss werden
+            textliche Empfehlungen für therapeutische Schwerpunkte angezeigt.
+          </p>
+        </header>
+
+        {!showResult && (
+          <>
+            <div style={{ marginBottom: 12 }}>
               <div
                 style={{
-                  width: `${((step + 1) / totalSteps) * 100}%`,
-                  height: "100%",
-                  background: "#7da7e6"
+                  height: 8,
+                  borderRadius: 999,
+                  background: "#e4edf9",
+                  overflow: "hidden"
                 }}
-              />
+              >
+                <div
+                  style={{
+                    width: `${((step + 1) / totalSteps) * 100}%`,
+                    height: "100%",
+                    background: "#7da7e6"
+                  }}
+                />
+              </div>
+              <small style={{ color: "#567", fontSize: 12 }}>
+                Schritt {step + 1} von {totalSteps}
+              </small>
             </div>
-            <small style={{ color: "#567" }}>
-              Schritt {step + 1} von {totalSteps}
-            </small>
-          </div>
 
-          <div style={cardStyle}>
-            <h2 style={{ marginTop: 0 }}>{currentDim.label}</h2>
-            <p style={{ color: "#567", marginTop: 0 }}>
-              {currentDim.description}
-            </p>
+            <div style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{currentDim.label}</h2>
+              <p style={{ color: "#567", marginTop: 0, fontSize: 14 }}>
+                {currentDim.description}
+              </p>
 
-            {currentDim.items.map((item) => (
-              <div key={item.id} style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                  {item.label}
-                </div>
-                <div>
-                  {item.scale.map((val) => (
-                    <button
-                      key={val}
-                      onClick={() => handleSelect(item.id, val)}
-                      style={{
-                        padding: "8px 12px",
-                        marginRight: 8,
-                        marginBottom: 6,
-                        borderRadius: 999,
-                        border:
-                          values[item.id] === val
-                            ? "2px solid #2b6cb0"
-                            : "1px solid #c8d9f2",
-                        background:
-                          values[item.id] === val ? "#e6f0ff" : "#ffffff",
-                        cursor: "pointer"
-                      }}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
-                  {values[item.id]
-                    ? `Auswahl: ${values[item.id]} – ${
-                        getFineGrainedLabel(
+              {currentDim.items.map((item) => (
+                <div key={item.id} style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                    {item.label}
+                  </div>
+                  <div>
+                    {item.scale.map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => handleSelect(item.id, val)}
+                        style={{
+                          padding: "8px 12px",
+                          marginRight: 8,
+                          marginBottom: 6,
+                          borderRadius: 999,
+                          border:
+                            values[item.id] === val
+                              ? "2px solid #2b6cb0"
+                              : "1px solid #c8d9f2",
+                          background:
+                            values[item.id] === val ? "#e6f0ff" : "#ffffff",
+                          cursor: "pointer",
+                          fontSize: 14,
+                          minWidth: 36
+                        }}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#777",
+                      marginTop: 4
+                    }}
+                  >
+                    {values[item.id]
+                      ? `Auswahl: ${values[item.id]} – ${getFineGrainedLabel(
                           currentDim.id,
                           values[item.id],
                           "Einordnung folgt"
-                        )
-                      }`
-                    : "Noch keine Auswahl (1 = klar linker Pol, 5 = klar rechter Pol)"}
+                        )}`
+                      : "Noch keine Auswahl (1 = klar linker Pol, 5 = klar rechter Pol)"}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginTop: 8
-            }}
-          >
-            <div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginTop: 8
+              }}
+            >
               <button
                 onClick={handlePrev}
                 disabled={step === 0}
                 style={{
                   padding: "8px 12px",
-                  borderRadius: 8,
+                  borderRadius: 999,
                   border: "1px solid #cbd5f0",
                   background: step === 0 ? "#f5f7fb" : "#ffffff",
                   cursor: step === 0 ? "default" : "pointer",
-                  marginRight: 8
+                  fontSize: 14
                 }}
               >
                 Zurück
@@ -529,114 +608,137 @@ export default function App() {
                 onClick={handleNext}
                 style={{
                   padding: "8px 16px",
-                  borderRadius: 8,
+                  borderRadius: 999,
                   border: "none",
                   background: "#2b6cb0",
                   color: "#fff",
-                  cursor: "pointer"
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: 500
                 }}
               >
-                {step < totalSteps - 1
-                  ? "Weiter"
-                  : "Empfehlung anzeigen"}
+                {step < totalSteps - 1 ? "Weiter" : "Empfehlung anzeigen"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {showResult && (
+          <div style={{ marginTop: 8 }}>
+            <div style={sectionCardStyle}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>
+                Übergeordnete Empfehlungen
+              </h2>
+              {aggregated.length === 0 ? (
+                <p style={{ color: "#555", fontSize: 14 }}>
+                  Es liegen noch nicht genügend Angaben vor, um Empfehlungen
+                  abzuleiten.
+                </p>
+              ) : (
+                <>
+                  <p style={{ color: "#555", fontSize: 14 }}>
+                    Folgende therapeutische Schwerpunkte ergeben sich aus der
+                    Kombination der Dimensionen:
+                  </p>
+                  <ul style={{ paddingLeft: 18, margin: 0 }}>
+                    {aggregated.map((m) => (
+                      <li key={m.label} style={{ marginBottom: 4, fontSize: 14 }}>
+                        <strong>{m.label}</strong>{" "}
+                        <span style={{ fontSize: 12, color: "#777" }}>
+                          (abgeleitet aus: {m.sources.join(", ")})
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+
+            {perDimension.map((res) => (
+              <div key={res.dimension.id} style={sectionCardStyle}>
+                <h3 style={{ marginTop: 0, fontSize: 16 }}>
+                  {res.dimension.label}
+                </h3>
+                <p style={{ marginBottom: 4, color: "#345", fontSize: 14 }}>
+                  <strong>Einordnung:</strong>{" "}
+                  {getFineGrainedLabel(
+                    res.dimension.id,
+                    res.rawValue,
+                    res.pole.headline
+                  )}{" "}
+                  ({res.pole.name}, Wert: {res.rawValue}/5)
+                </p>
+                <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                  <div>
+                    <div
+                      style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}
+                    >
+                      Empfohlen:
+                    </div>
+                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                      {res.pole.recommended.map((r) => (
+                        <li key={r} style={{ marginBottom: 2, fontSize: 14 }}>
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <div
+                      style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}
+                    >
+                      Nicht empfohlen:
+                    </div>
+                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                      {res.pole.avoid.map((a) => (
+                        <li key={a} style={{ marginBottom: 2, fontSize: 14 }}>
+                          {a}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div
+              style={{
+                marginTop: 8,
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8
+              }}
+            >
+              <button
+                onClick={reset}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #cbd5f0",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                  fontSize: 14
+                }}
+              >
+                Neue Einschätzung starten
               </button>
             </div>
           </div>
-        </>
-      )}
+        )}
 
-      {showResult && (
-        <div style={{ marginTop: 8 }}>
-          <div style={cardStyle}>
-            <h2 style={{ marginTop: 0 }}>Übergeordnete Empfehlungen</h2>
-            {aggregated.length === 0 ? (
-              <p style={{ color: "#555" }}>
-                Es liegen noch nicht genügend Angaben vor, um Empfehlungen
-                abzuleiten.
-              </p>
-            ) : (
-              <>
-                <p style={{ color: "#555" }}>
-                  Folgende therapeutische Schwerpunkte ergeben sich aus der
-                  Kombination der vier Dimensionen:
-                </p>
-                <ul>
-                  {aggregated.map((m) => (
-                    <li key={m.label} style={{ marginBottom: 4 }}>
-                      <strong>{m.label}</strong>{" "}
-                      <span style={{ fontSize: 12, color: "#777" }}>
-                        (abgeleitet aus: {m.sources.join(", ")})
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-
-          {perDimension.map((res) => (
-            <div key={res.dimension.id} style={cardStyle}>
-              <h3 style={{ marginTop: 0 }}>{res.dimension.label}</h3>
-              <p style={{ marginBottom: 4, color: "#345" }}>
-                <strong>Einordnung:</strong>{" "}
-                {getFineGrainedLabel(
-                  res.dimension.id,
-                  res.rawValue,
-                  res.pole.headline
-                )}{" "}
-                ({res.pole.name}, Wert: {res.rawValue}/5)
-              </p>
-              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                    Empfohlen:
-                  </div>
-                  <ul style={{ paddingLeft: 18, margin: 0 }}>
-                    {res.pole.recommended.map((r) => (
-                      <li key={r} style={{ marginBottom: 2 }}>
-                        {r}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                    Nicht empfohlen:
-                  </div>
-                  <ul style={{ paddingLeft: 18, margin: 0 }}>
-                    {res.pole.avoid.map((a) => (
-                      <li key={a} style={{ marginBottom: 2 }}>
-                        {a}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          <div style={{ marginTop: 8 }}>
-            <button
-              onClick={reset}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5f0",
-                background: "#ffffff",
-                cursor: "pointer"
-              }}
-            >
-              Neue Einschätzung starten
-            </button>
-          </div>
-        </div>
-      )}
-
-      <footer style={{ marginTop: 16, fontSize: 12, color: "#789" }}>
-        Prototyp basierend auf dem „Dissociation – Therapeutic Decision
-        Framework“ (Diss-TDF). Endgültige klinische Entscheidungen verbleiben
-        bei der behandelnden Person.
-      </footer>
+        <footer
+          style={{
+            marginTop: 12,
+            fontSize: 11,
+            color: "#789",
+            textAlign: "center"
+          }}
+        >
+          Prototyp basierend auf dem „Dissociation – Therapeutic Decision
+          Framework“ (Diss-TDF). Endgültige klinische Entscheidungen verbleiben
+          bei der behandelnden Person.
+        </footer>
+      </div>
     </div>
   );
 }
